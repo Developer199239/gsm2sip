@@ -904,10 +904,11 @@ class CallOrchestrator(
         // Dial via the SIM whose configured own number matches the SIP
         // Outbound CID.  On a dual-SIM device omitting the account leaves
         // Telecom in SELECT_PHONE_ACCOUNT, which a headless gateway cannot
-        // answer.
+        // answer.  A single-SIM gateway dials on its SIM whatever the CID is,
+        // or without one — makeCall decides.
         val cid = sipCall.callerNumber?.trim()?.takeIf { it.isNotEmpty() }
-        if (cid == null || !GsmCallManager.makeCall(context, gsmDestination, cid)) {
-            Log.e(TAG, "Cannot dial GSM: SIP Outbound CID is missing or does not select a unique SIM")
+        if (!GsmCallManager.makeCall(context, gsmDestination, cid, headless = true)) {
+            Log.e(TAG, "Cannot dial GSM: SIP Outbound CID ${cid ?: "missing"} does not select a unique SIM")
             tearDown("No matching SIM for Outbound CID", 503 to "No Matching SIM")
         }
     }

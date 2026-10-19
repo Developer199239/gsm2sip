@@ -138,8 +138,8 @@ That is why the gateway moved to a Qualcomm device.
   OPTIONS are answered with `200 OK`.
 - **Withheld callers** arrive as `anonymous` with the display name
   `Withheld`, `Unknown` or `Payphone`, not as a callable "unknown".
-- **Dual-SIM outbound**: the SIM is chosen by the call's caller ID — see the
-  breaking change below.
+- **Dual-SIM outbound**: the SIM is chosen by the call's caller ID — see
+  below.
 - **G.711 A-law** encoding fixed for quiet samples: GSM→SIP audio on A-law
   calls no longer sounds like a radio at the edge of range.
 - RTP header extensions and padding are skipped instead of decoded as audio.
@@ -147,12 +147,11 @@ That is why the gateway moved to a Qualcomm device.
 - Google Pixel 4a: recognised by `tools/check-device.sh`, plus an optional
   battery-protection setting that keeps the charge between two limits.
 
-> **Breaking change — outbound caller ID.** Every outbound call must now carry
-> the number of one of the gateway's SIMs as its caller ID, single-SIM gateways
-> included. A call whose caller ID matches no SIM is refused with
-> `503 No Matching SIM` and nothing is dialled. If your server sends an
-> extension or an account name as the caller ID, set it to the SIM's number —
-> see [Making outbound calls](#3-making-outbound-calls-through-the-gateway).
+> **Dual-SIM gateways — outbound caller ID.** With two SIMs, an outbound call
+> has to carry the number of the SIM it should leave by as its caller ID; one
+> that matches neither is refused with `503 No Matching SIM` rather than dialled
+> from the wrong number. A single-SIM gateway dials on its SIM whatever the
+> caller ID says — see [Making outbound calls](#3-making-outbound-calls-through-the-gateway).
 
 ## Download
 
@@ -193,11 +192,10 @@ Only the Magisk module needs to be installed — it includes the APK and handles
 5. **Own Number**: Enter the SIM's own number in international format, e.g.
    `+4915112345678` — one field per SIM on a dual-SIM phone.  It is sent as
    the SIP destination so the server can route on the number that was
-   dialled, the same way a VoIP router sends the DID, and since 1.3.0 it is
-   also how an outbound call picks its SIM.  Leaving it unset makes the
+   dialled, the same way a VoIP router sends the DID, and on a dual-SIM phone
+   it is also how an outbound call picks its SIM.  Leaving it unset makes the
    gateway address its own extension, which most servers route straight back
-   to the device — the call then loops and the GSM leg is never answered —
-   and every outbound call is refused.
+   to the device — the call then loops and the GSM leg is never answered.
 6. **Start**: the gateway registers and begins bridging calls; the header pill
    shows **Online** once registration succeeds (tap it to retry)
 
@@ -296,18 +294,24 @@ Normalise it before any lookup that keys on the caller.
 ### 3. Making outbound calls through the gateway
 
 Address the call the same way you would address a message: put the number in
-the Request-URI and dial the peer.  The caller ID has to be the number of the
-SIM the call should leave by — the gateway reads it from
-`P-Asserted-Identity`, then `Remote-Party-ID`, then the `From` user, and dials
-on the SIM whose **Own Number** it matches:
+the Request-URI and dial the peer.
 
 ```ini
 exten => _X.,1,NoOp(Outbound via GSM gateway: ${EXTEN})
-; The SIM to call from.  An agent's extension or the account name matches no
-; SIM, and the call is refused with 503 No Matching SIM.
-same => n,Set(CALLERID(num)=+4915112345678)
 same => n,Dial(SIP/gateway-gw1/${EXTEN},60)
 same => n,Hangup()
+```
+
+A single-SIM gateway needs nothing more.  On a **dual-SIM** gateway the caller
+ID picks the SIM: the gateway reads it from `P-Asserted-Identity`, then
+`Remote-Party-ID`, then the `From` user, and dials on the SIM whose **Own
+Number** it matches.  An agent's extension or the account name matches
+neither, and the call is refused with `503 No Matching SIM` — so set it:
+
+```ini
+; Dual-SIM only: the SIM to call from.
+same => n,Set(CALLERID(num)=+4915112345678)
+same => n,Dial(SIP/gateway-gw1/${EXTEN},60)
 ```
 
 Numbers are compared on their digits, so `+4915112345678` and
@@ -353,7 +357,7 @@ branch on `${DIALSTATUS}` and `${HANGUPCAUSE}` instead of guessing.
 | Cancelled at the handset | `487 Request Terminated` |
 | Number barred, or blocked by fixed dialling | `403 Call Barred` |
 | The gateway's own SIM has no service, or the network is congested | `503 Service Unavailable` |
-| Caller ID matches none of the gateway's SIMs | `503 No Matching SIM` |
+| Dual-SIM: caller ID matches neither SIM | `503 No Matching SIM` |
 | Gateway already on a call | `486 Busy Here` |
 | No destination in the INVITE | `488 Not Acceptable Here` |
 | Anything failing after the answer | `BYE` |

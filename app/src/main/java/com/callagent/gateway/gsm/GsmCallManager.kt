@@ -340,20 +340,45 @@ object GsmCallManager {
     }
 
     @SuppressLint("MissingPermission")
-    fun makeCall(context: Context, destination: String, outboundCid: String? = null): Boolean {
+    /**
+     * [headless]: the call comes from SIP, with nobody at the screen to answer
+     * Telecom's "which SIM?" — so it must name its SIM or be refused.  The
+     * in-app dialler passes false and lets a dual-SIM phone ask.
+     */
+    fun makeCall(
+        context: Context,
+        destination: String,
+        outboundCid: String? = null,
+        headless: Boolean = false,
+    ): Boolean {
         Log.i(TAG, "Making GSM call to $destination (outbound CID=${outboundCid ?: "none"})")
         val uri = Uri.fromParts("tel", destination, null)
         val telecom = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-        val account = outboundCid?.let { findPhoneAccountForCid(context, telecom, it) }
-        if (outboundCid != null && account == null) {
-            Log.e(TAG, "Outbound CID $outboundCid has no unique SIM match; refusing to dial")
+        // One SIM: it is the only way out, so the caller ID has nothing to
+        // choose between.  Requiring it to match anyway refused every
+        // outbound call from a server that sends an extension or an account
+        // name as the caller ID — which was the README's own example.  The
+        // match is only needed where a wrong guess would dial from the wrong
+        // number: on a dual-SIM phone.
+        val sims = simPhoneAccounts(context, telecom)
+        val account = when {
+            sims.size == 1 -> sims.single().also {
+                if (outboundCid != null && findPhoneAccountForCid(context, telecom, outboundCid) == null) {
+                    Log.i(TAG, "Outbound CID $outboundCid matches no SIM; single SIM, dialling on it anyway")
+                }
+            }
+            outboundCid != null -> findPhoneAccountForCid(context, telecom, outboundCid)
+            else -> null
+        }
+        if (account == null && (headless || outboundCid != null)) {
+            Log.e(TAG, "Outbound CID ${outboundCid ?: "none"} selects no unique SIM among ${sims.size}; refusing to dial")
             return false
         }
         try {
             val extras = Bundle()
             if (account != null) {
                 extras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, account)
-                Log.i(TAG, "Outbound CID $outboundCid matched SIM phone account")
+                Log.i(TAG, "Dialling on SIM phone account ${account.id}")
             }
             telecom.placeCall(uri, extras)
             return true
@@ -361,8 +386,9 @@ object GsmCallManager {
             Log.w(TAG, "placeCall failed (${e.message}) — falling back to ACTION_CALL")
         }
         // An ACTION_CALL intent cannot reliably carry the selected account
-        // from a background service.  Refuse rather than dial on the wrong SIM.
-        if (account != null) return false
+        // from a background service.  Refuse rather than dial on the wrong
+        // SIM — unless there is only one SIM to dial on.
+        if (account != null && sims.size != 1) return false
         try {
             context.startActivity(
                 Intent(Intent.ACTION_CALL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -371,6 +397,20 @@ object GsmCallManager {
         } catch (e: Exception) {
             Log.e(TAG, "ACTION_CALL fallback failed: ${e.message}")
             return false
+        }
+    }
+
+    /** The call-capable accounts that belong to an active SIM. */
+    @SuppressLint("MissingPermission")
+    private fun simPhoneAccounts(context: Context, telecom: TelecomManager): List<PhoneAccountHandle> {
+        val tm = context.getSystemService(TelephonyManager::class.java)
+        return try {
+            telecom.callCapablePhoneAccounts.filter {
+                tm.getSubscriptionId(it) != SubscriptionManager.INVALID_SUBSCRIPTION_ID
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not enumerate SIM phone accounts: ${e.message}")
+            emptyList()
         }
     }
 
