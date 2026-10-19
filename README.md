@@ -43,6 +43,7 @@ remote actually offered rather than failing a call over a preference.
 |---|---|---|---|---|
 | Xiaomi Poco X3 NFC (`surya`) | Qualcomm SM6150/SM7150, WCD9375 | digital, via `incall_music` → `Telephony Tx` | digital, via `VOICE_DOWNLINK` | **fully working** |
 | Samsung Galaxy S4 Mini (`serranolte`) | Qualcomm MSM8960, WCD9304 | digital, via `incall_music` | digital, via `VOC_REC_*` | **fully working** |
+| Google Pixel 4a (`sunfish`) | Qualcomm SM7150 | — | — | contributed support; not verified here |
 | Samsung Galaxy S10e | Exynos 9820, CS47L93 | no path | no path | not usable |
 
 **The Poco X3 NFC is the reference device and works fully**: G.722 wideband in
@@ -80,6 +81,7 @@ What has actually been checked so far:
 |---|---|---|---|
 | Poco X3 NFC | SM6150/SM7150 | Xiaomi (MIUI) | fully working, verified on live calls |
 | Galaxy S4 Mini | MSM8960 | LineageOS 16 | fully working, verified on a live call |
+| Pixel 4a | SM7150 | Google | recognised by the check, used by a contributor |
 | Galaxy S10e | Exynos 9820 | — | no path in either direction |
 
 Everything the working profile depends on is generic Qualcomm audio, so other
@@ -120,6 +122,38 @@ That is why the gateway moved to a Qualcomm device.
 - **Power**: Always connected to charger
 - **Build host**: Linux with JDK 17+
 
+## What's new in 1.3.0
+
+- **DTMF reaches the GSM call.** Key presses sent as RFC 4733 telephone-events
+  or SIP INFO are played into the mobile call, so IVR menus on the far end
+  work — see [DTMF](#dtmf).
+- **Failures say why.** A wrong, switched-off or unreachable number now comes
+  back as its own SIP code instead of a generic `500` — see
+  [Call status codes](#call-status-codes).
+- **Ringing lasts as long as the server rings.** An inbound call is no longer
+  cut off 30 s after the INVITE while the softphone is still ringing.
+- **A rejected call stays rejected.** When the softphone declines, the gateway
+  no longer re-sends the INVITE; only transient failures are retried.
+- **Long calls survive session timers.** In-dialog INFO, re-INVITE, UPDATE and
+  OPTIONS are answered with `200 OK`.
+- **Withheld callers** arrive as `anonymous` with the display name
+  `Withheld`, `Unknown` or `Payphone`, not as a callable "unknown".
+- **Dual-SIM outbound**: the SIM is chosen by the call's caller ID — see the
+  breaking change below.
+- **G.711 A-law** encoding fixed for quiet samples: GSM→SIP audio on A-law
+  calls no longer sounds like a radio at the edge of range.
+- RTP header extensions and padding are skipped instead of decoded as audio.
+- The Magisk module seeds its root policy on Android 15 too.
+- Google Pixel 4a: recognised by `tools/check-device.sh`, plus an optional
+  battery-protection setting that keeps the charge between two limits.
+
+> **Breaking change — outbound caller ID.** Every outbound call must now carry
+> the number of one of the gateway's SIMs as its caller ID, single-SIM gateways
+> included. A call whose caller ID matches no SIM is refused with
+> `503 No Matching SIM` and nothing is dialled. If your server sends an
+> extension or an account name as the caller ID, set it to the SIM's number —
+> see [Making outbound calls](#3-making-outbound-calls-through-the-gateway).
+
 ## Download
 
 Prebuilt APK and Magisk module:
@@ -157,11 +191,13 @@ Only the Magisk module needs to be installed — it includes the APK and handles
 4. **Configure SIP**: open Settings in the app (the gear, top right) and enter
    your SIP server address, port, username and password
 5. **Own Number**: Enter the SIM's own number in international format, e.g.
-   `+4915112345678`.  This is sent as the SIP destination so the server can
-   route on the number that was dialled, the same way a VoIP router sends the
-   DID.  Leaving it unset makes the gateway address its own extension,
-   which most servers route straight back to the device — the call then loops
-   and the GSM leg is never answered.
+   `+4915112345678` — one field per SIM on a dual-SIM phone.  It is sent as
+   the SIP destination so the server can route on the number that was
+   dialled, the same way a VoIP router sends the DID, and since 1.3.0 it is
+   also how an outbound call picks its SIM.  Leaving it unset makes the
+   gateway address its own extension, which most servers route straight back
+   to the device — the call then loops and the GSM leg is never answered —
+   and every outbound call is refused.
 6. **Start**: the gateway registers and begins bridging calls; the header pill
    shows **Online** once registration succeeds (tap it to retry)
 
@@ -170,7 +206,9 @@ Only the Magisk module needs to be installed — it includes the APK and handles
 - **Request-URI / To** — the number that was dialled, i.e. the gateway SIM's
   MSISDN.  Not the SIP account name.
 - **From** — the calling party, passed through exactly as the carrier delivered
-  it (some send `+49…`, some `0…`; the app does not rewrite it).
+  it (some send `+49…`, some `0…`; the app does not rewrite it).  A caller who
+  withholds the number, is unknown, or rings from a payphone arrives as
+  `anonymous` with the display name `Withheld`, `Unknown` or `Payphone`.
 
 Whatever the server routes on, it has to recognise the SIM's number: the
 gateway puts that number in the Request-URI, so a dialplan or number table
@@ -219,6 +257,12 @@ insecure = port,invite
 ; The gateway offers G.722 only unless Settings → Codec says otherwise.
 disallow = all
 allow = g722
+; Keep media on the server.  A re-INVITE or UPDATE (a session-timer refresh)
+; is answered with the SDP the call started with, so the gateway does not
+; follow the media to a new address.
+directmedia = no
+; RFC 4733 telephone-events; "info" works too — see DTMF below.
+dtmfmode = rfc2833
 ```
 
 ### 2. Add gateway dialplan context
@@ -252,13 +296,23 @@ Normalise it before any lookup that keys on the caller.
 ### 3. Making outbound calls through the gateway
 
 Address the call the same way you would address a message: put the number in
-the Request-URI and dial the peer.
+the Request-URI and dial the peer.  The caller ID has to be the number of the
+SIM the call should leave by — the gateway reads it from
+`P-Asserted-Identity`, then `Remote-Party-ID`, then the `From` user, and dials
+on the SIM whose **Own Number** it matches:
 
 ```ini
 exten => _X.,1,NoOp(Outbound via GSM gateway: ${EXTEN})
+; The SIM to call from.  An agent's extension or the account name matches no
+; SIM, and the call is refused with 503 No Matching SIM.
+same => n,Set(CALLERID(num)=+4915112345678)
 same => n,Dial(SIP/gateway-gw1/${EXTEN},60)
 same => n,Hangup()
 ```
+
+Numbers are compared on their digits, so `+4915112345678` and
+`004915112345678` match; both need at least ten digits, and a US number
+matches with or without its leading `1`.
 
 `X-GSM-Forward` does the same job and takes precedence where both are present,
 which is what a dialplan needs when the number it dials is not the number it
@@ -293,12 +347,21 @@ branch on `${DIALSTATUS}` and `${HANGUPCAUSE}` instead of guessing.
 | The mobile answered | `200 OK`, then RTP |
 | Callee busy | `486 Busy Here` |
 | Callee declined | `603 Decline` |
-| No answer, or unreachable | `480 Temporarily Unavailable` |
+| Number not in service | `404 Number Not In Service` |
+| Number malformed or incomplete | `484 Address Incomplete` |
+| No answer, switched off, or unreachable | `480 Not Reachable` |
 | Cancelled at the handset | `487 Request Terminated` |
-| Number barred | `403 Forbidden` |
+| Number barred, or blocked by fixed dialling | `403 Call Barred` |
+| The gateway's own SIM has no service, or the network is congested | `503 Service Unavailable` |
+| Caller ID matches none of the gateway's SIMs | `503 No Matching SIM` |
 | Gateway already on a call | `486 Busy Here` |
 | No destination in the INVITE | `488 Not Acceptable Here` |
 | Anything failing after the answer | `BYE` |
+
+Before 1.3.0 everything Android reports as a generic error — a wrong number,
+a switched-off phone, a congested network — came back as `500`, which Asterisk
+treats like an unreachable channel, so the server could not tell a bad number
+from a broken gateway.  `503` is now kept for problems on the gateway's side.
 
 The `180` carries no SDP, deliberately. Without an SDP answer the server
 cannot open an early-media path, so an agent cannot be bridged into a call the
@@ -329,8 +392,36 @@ the agent is actually on the line, with no dead air at the join.
 | --- | --- |
 | `100` / `180` / `183` | Keeps the GSM leg ringing |
 | `200 OK` | Answers the GSM call and starts the bridge |
-| `486` / `603` / any 4xx-6xx | Ends the GSM call |
-| No response | Retries, then gives up and ends the GSM call |
+| `486` / `603` / any other final 4xx–6xx | Ends the GSM call, without retrying |
+| `408` / `500` / `503` / `504`, or no response | Retries, then gives up and ends the GSM call |
+
+The GSM leg rings for as long as the server says it is ringing: the gateway's
+own 30 s limit only applies while nothing has come back, and once a `180`
+arrives the server's dial timeout decides, with a 70 s safety net.
+
+## DTMF
+
+Key presses from the SIP side are played into the GSM call, so a menu on the
+mobile end ("press 1 for…") can be driven from the agent or the softphone.
+Both common carriers of DTMF are understood:
+
+- **RFC 4733 telephone-events** (`dtmfmode = rfc2833` on Asterisk) — the
+  payload type the server put in its SDP, and 101.
+- **SIP INFO** (`dtmfmode = info`) with `application/dtmf-relay` or
+  `application/dtmf` bodies.
+
+Each digit is played for at least a minimum tone length with a gap between
+digits, and a tone that never receives its end is stopped by a watchdog.
+DTMF from the GSM side to SIP is not relayed.
+
+### Requests during a call
+
+INFO, re-INVITE, UPDATE and OPTIONS arriving inside an established call are
+answered with `200 OK`.  Before 1.3.0 they went unanswered, and a server
+refreshing a session timer tore the call down after its timeout — long calls
+dropped.  A re-INVITE or UPDATE is answered with the call's existing SDP (same
+port, codec and SRTP key); media is not renegotiated, which is why the server
+has to keep it anchored (`directmedia = no` above).
 
 ## SMS over SIP
 
