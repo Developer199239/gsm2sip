@@ -604,3 +604,8 @@ The `gateway-magisk.zip` module does two critical things:
 - **SIP not registering**: Check WiFi connectivity, server address, and credentials
 - **Calls not auto-answering**: Ensure the app is set as the default phone app
 - **Audio drops**: Check WiFi stability; the app holds a WiFi lock but poor signal will cause issues
+
+## License
+
+[MIT](LICENSE). Bug fixes and new device profiles from other developers are
+welcome as pull requests against this repository.
