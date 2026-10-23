@@ -133,6 +133,13 @@ That is why the gateway moved to a Qualcomm device.
 - **Power**: Always connected to charger
 - **Build host**: Linux with JDK 17+
 
+## What's new in 1.4.1
+
+- **The header fits small screens.** The Online/Offline pill is now a globe
+  badge in the same style as the shield, key and Call monitor badges — green
+  registered, yellow connecting, red offline — so the settings button no longer
+  falls off the edge on 540 px-wide phones such as the Galaxy S4 Mini.
+
 ## What's new in 1.4.0
 
 - **Stock MIUI works.** The device profile is chosen by the chip (platform,
@@ -229,8 +236,9 @@ Only the Magisk module needs to be installed — it includes the APK and handles
    it is also how an outbound call picks its SIM.  Leaving it unset makes the
    gateway address its own extension, which most servers route straight back
    to the device — the call then loops and the GSM leg is never answered.
-6. **Start**: the gateway registers and begins bridging calls; the header pill
-   shows **Online** once registration succeeds (tap it to retry)
+6. **Start**: the gateway registers and begins bridging calls; the globe badge
+   in the header turns **green** once registration succeeds (yellow while
+   connecting, red when stopped or failed — tap it to retry)
 
 ### What the SIP leg carries
 
