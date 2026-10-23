@@ -426,7 +426,16 @@ data class DeviceProfile(
                 // "sunfish".  Match its codename (not the model name, which
                 // could also match the differently-routed Pixel 4a 5G) so it
                 // does not fall through to Generic and leave the mic live.
+                //
+                // MIUI reports Build.BOARD as the codename ("surya"), not the
+                // platform ("sm6150") that LineageOS puts there, so on the
+                // stock ROM the Poco fell through to Generic Qualcomm: agent
+                // audio played on the loudspeaker instead of into the call and
+                // the caller was never captured.  Match the codenames too —
+                // surya (X3 NFC) and karna (X3, same SoC and codec).
                 board.contains("sm6150") || board.contains("sm7150") ||
+                    device == "surya" || device == "karna" ||
+                    board == "surya" || board == "karna" ||
                     device == "sunfish" || board == "sunfish" || hw == "sunfish" ->
                     sm6150()
 
