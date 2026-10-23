@@ -1738,13 +1738,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateMonitorButtons() {
         if (::btnInCallMonitor.isInitialized) {
-            btnInCallMonitor.text = if (monitoring) "STOP LISTENING" else "LISTEN IN"
+            btnInCallMonitor.text = if (monitoring) "SNOOP OFF" else "LISTEN IN"
         }
         if (::btnHomeSnoop.isInitialized) {
             setCallButtonState(
                 btnHomeSnoop,
-                if (monitoring) "Stop" else "Snoop",
-                if (monitoring) R.drawable.ic_fa_circle_stop else R.drawable.ic_fa_headphones
+                // "Off", not "Stop": it switches the speaker off, it does not
+                // stop anything about the call.
+                if (monitoring) "Off" else "Snoop",
+                if (monitoring) R.drawable.ic_fa_volume_xmark else R.drawable.ic_fa_headphones
             )
         }
     }
