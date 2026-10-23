@@ -762,10 +762,16 @@ class MainActivity : AppCompatActivity() {
             else -> true            // any call state means registration held
         }
         gatewayOnline = online
-        tvHomeStatusPill.text = if (online) "● Online" else "● Offline"
-        tvHomeStatusPill.setTextColor(
-            Color.parseColor(if (online) "#34D399" else "#F87171")
+        // The globe is the old Online/Offline pill as an icon, so the header
+        // fits a 540px-wide screen (S4 Mini): green registered, yellow still
+        // connecting or retrying, red stopped or failed.
+        val connecting = !online && (state == "STARTING" || state == "IDLE")
+        androidx.core.widget.TextViewCompat.setCompoundDrawableTintList(
+            tvHomeStatusPill, ColorStateList.valueOf(Color.parseColor(
+                when { online -> "#34D399"; connecting -> "#FBBF24"; else -> "#F87171" }))
         )
+        tvHomeStatusPill.contentDescription =
+            when { online -> "Online"; connecting -> "Connecting"; else -> "Offline" }
 
         // The badge says what the signalling is carried over, which is a
         // property of the configuration rather than of the current state --
