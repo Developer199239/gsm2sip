@@ -112,7 +112,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnFilterAll: Button
     private lateinit var btnFilterIncoming: Button
     private lateinit var btnFilterOutgoing: Button
-    /** "all" | "in" | "out" — which calls the home list shows.  A missed call
+    private lateinit var btnFilterSms: Button
+    /** "all" | "in" | "out" | "sms" — which entries the home list shows.  A missed call
      *  is an inbound one that never carried audio, so it belongs under
      *  Incoming rather than in a category of its own. */
     private var callFilter = "all"
@@ -348,9 +349,11 @@ class MainActivity : AppCompatActivity() {
         btnFilterAll = findViewById(R.id.btnFilterAll)
         btnFilterIncoming = findViewById(R.id.btnFilterIncoming)
         btnFilterOutgoing = findViewById(R.id.btnFilterOutgoing)
+        btnFilterSms = findViewById(R.id.btnFilterSms)
         btnFilterAll.setOnClickListener { setCallFilter("all") }
         btnFilterIncoming.setOnClickListener { setCallFilter("in") }
         btnFilterOutgoing.setOnClickListener { setCallFilter("out") }
+        btnFilterSms.setOnClickListener { setCallFilter("sms") }
         tvNetMobile.setOnClickListener { showLinkDetails(mobile = true) }
         tvNetWifi.setOnClickListener { showLinkDetails(mobile = false) }
         findViewById<View>(R.id.btnHomeMenu).setOnClickListener { openConfigView() }
@@ -1347,7 +1350,8 @@ class MainActivity : AppCompatActivity() {
         val off = ContextCompat.getColor(this, R.color.btn_secondary)
         val offText = ContextCompat.getColor(this, R.color.text_primary)
         for ((btn, name) in listOf(
-            btnFilterAll to "all", btnFilterIncoming to "in", btnFilterOutgoing to "out"
+            btnFilterAll to "all", btnFilterIncoming to "in", btnFilterOutgoing to "out",
+            btnFilterSms to "sms"
         )) {
             val active = name == filter
             btn.backgroundTintList = ColorStateList.valueOf(if (active) on else off)
@@ -1362,6 +1366,7 @@ class MainActivity : AppCompatActivity() {
         val entries = when (callFilter) {
             "in" -> all.filter { it.direction == "IN" }
             "out" -> all.filter { it.direction != "IN" }
+            "sms" -> all.filter { it.type == CallLogStore.TYPE_SMS }
             else -> all
         }
         homeTrafficList.removeAllViews()
