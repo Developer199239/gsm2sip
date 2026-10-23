@@ -88,6 +88,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvHomeStatusPill: TextView
     private lateinit var tvHomeTlsBadge: TextView
     private lateinit var tvHomeSrtpBadge: TextView
+    private lateinit var tvHomeMonitorBadge: TextView
     private lateinit var tvNetMobile: TextView
     private lateinit var tvNetWifi: TextView
     private val netHandler = Handler(Looper.getMainLooper())
@@ -334,6 +335,7 @@ class MainActivity : AppCompatActivity() {
         tvHomeStatusPill = findViewById(R.id.tvHomeStatusPill)
         tvHomeTlsBadge = findViewById(R.id.tvHomeTlsBadge)
         tvHomeSrtpBadge = findViewById(R.id.tvHomeSrtpBadge)
+        tvHomeMonitorBadge = findViewById(R.id.tvHomeMonitorBadge)
         tvNetMobile = findViewById(R.id.tvNetMobile)
         tvNetWifi = findViewById(R.id.tvNetWifi)
         homeCallCard = findViewById(R.id.homeCallCard)
@@ -778,6 +780,11 @@ class MainActivity : AppCompatActivity() {
         // the same AND the SIP client enforces.
         tvHomeSrtpBadge.visibility =
             if (tlsOn && cfg.getBoolean("srtp_enabled", false)) View.VISIBLE else View.GONE
+
+        // Settings → Call monitor: a red phone-volume badge while every call
+        // is put on the speaker, so it is never on without anyone noticing.
+        tvHomeMonitorBadge.visibility =
+            if (cfg.getBoolean("call_monitor", false)) View.VISIBLE else View.GONE
 
         if (state == "BRIDGED") {
             homeCallCard.visibility = View.VISIBLE

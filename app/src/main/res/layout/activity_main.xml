@@ -85,6 +85,19 @@
                         android:layout_marginStart="6dp"
                         android:visibility="gone" />
 
+                    <TextView
+                        android:id="@+id/tvHomeMonitorBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="33dp"
+                        android:gravity="center"
+                        android:contentDescription="Call monitor on: every call plays on the speaker"
+                        android:background="@drawable/input_bg"
+                        android:drawableStart="@drawable/ic_fa_phone_volume"
+                        android:paddingHorizontal="9dp"
+                        android:paddingVertical="0dp"
+                        android:layout_marginStart="6dp"
+                        android:visibility="gone" />
+
                     <View
                         android:layout_width="0dp"
                         android:layout_height="1dp"
