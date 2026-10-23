@@ -41,14 +41,25 @@ remote actually offered rather than failing a call over a preference.
 
 | Device | SoC | Agent → caller | Caller → agent | Status |
 |---|---|---|---|---|
-| Xiaomi Poco X3 NFC (`surya`) | Qualcomm SM6150/SM7150, WCD9375 | digital, via `incall_music` → `Telephony Tx` | digital, via `VOICE_DOWNLINK` | **fully working** |
+| Xiaomi Poco X3 NFC (`surya`) | Qualcomm SM6150/SM7150, WCD9375 | digital, via `incall_music` → `Telephony Tx` | digital, via `VOICE_DOWNLINK` | **fully working** on LineageOS and MIUI 14 |
 | Samsung Galaxy S4 Mini (`serranolte`) | Qualcomm MSM8960, WCD9304 | digital, via `incall_music` | digital, via `VOC_REC_*` | **fully working** |
 | Google Pixel 4a (`sunfish`) | Qualcomm SM7150 | — | — | contributed support; not verified here |
 | Samsung Galaxy S10e | Exynos 9820, CS47L93 | no path | no path | not usable |
 
 **The Poco X3 NFC is the reference device and works fully**: G.722 wideband in
 both directions, entirely through the modem, with the handset's own microphone
-and speaker muted for the whole call.
+and speaker muted for the whole call — on LineageOS and on Xiaomi's own MIUI 14
+(Android 12) alike.
+
+The profile is chosen by the **chip, not the phone's name**: the gateway reads
+`ro.board.platform`, the SoC model and `/sys/devices/soc0`, so any
+SM6150/SM7150 phone gets it whatever its ROM calls it — Mi 9T / Redmi K20,
+Mi Note 10, Redmi Note 7 Pro and the rest of that family (only the Poco X3 NFC
+is verified on live calls).  MIUI reports the board as the codename (`surya`)
+where LineageOS reports the platform, which is why matching by board name alone
+was not enough.  Phones on other chips — the Snapdragon 720G (SM7125) in the
+Redmi Note 9 Pro / Poco M2 Pro, for one — fall back to the generic profile until
+one is tested.
 
 **The Galaxy S4 Mini works fully too**, which is worth dwelling on because it
 is a 2013 handset on LineageOS 16 (Android 9) and armeabi-v7a — and because its
@@ -79,7 +90,7 @@ What has actually been checked so far:
 
 | Device | SoC | Vendor | Result |
 |---|---|---|---|
-| Poco X3 NFC | SM6150/SM7150 | Xiaomi (MIUI) | fully working, verified on live calls |
+| Poco X3 NFC | SM6150/SM7150 | Xiaomi MIUI 14 and LineageOS | fully working, verified on live calls |
 | Galaxy S4 Mini | MSM8960 | LineageOS 16 | fully working, verified on a live call |
 | Pixel 4a | SM7150 | Google | recognised by the check, used by a contributor |
 | Galaxy S10e | Exynos 9820 | — | no path in either direction |
@@ -115,12 +126,35 @@ That is why the gateway moved to a Qualcomm device.
 
 ## Requirements
 
-- **Device**: Qualcomm-based Android phone with LineageOS + Magisk root
-  (developed against a Poco X3 NFC on Android 16)
+- **Device**: Qualcomm-based Android phone with Magisk root, on LineageOS or the
+  stock ROM (developed against a Poco X3 NFC; verified on LineageOS and MIUI 14)
 - **SIM**: SIM card with voice plan
 - **Network**: Stable WiFi connection
 - **Power**: Always connected to charger
 - **Build host**: Linux with JDK 17+
+
+## What's new in 1.4.0
+
+- **Stock MIUI works.** The device profile is chosen by the chip (platform,
+  SoC model, `soc0`), not by the board name MIUI replaces with the codename —
+  on MIUI the Poco used to fall back to the generic profile, playing the agent
+  on the loudspeaker and never capturing the caller.
+- **Snoop plays both sides.** Listening in now works on MIUI too: the call is
+  unmuted on the speaker and the agent is mixed in on the voice-call stream,
+  with the microphone muted throughout — see [Snoop and Call monitor](#snoop-and-call-monitor).
+- **Call monitor.** A new setting puts every call on Snoop automatically. A red
+  phone badge in the header shows it is on and toggles it (grey when off).
+- **No clipping on the agent's voice.** Boosted samples are soft-limited above
+  75% of full scale instead of being cut flat; on MIUI agent volume 0 is the
+  right setting (+2 was ×4 and clipped).
+- **SMS filter** next to All / Incoming / Outgoing; the four chips always fit on
+  one line, shortening Incoming/Outgoing with "…" on narrow screens.
+- Calls and messages from before today show their date and time
+  (`12 Oct 12:32:22`) instead of "Earlier".
+- The Snoop button reads **Off** while snooping, not "Stop", which read like
+  ending the call.
+- Removed: the Pixel 4a battery charge-limit setting.
+- Cosmetic: a proper settings gear, and no fixed "Today" label over the list.
 
 ## What's new in 1.3.0
 
@@ -210,6 +244,20 @@ Only the Magisk module needs to be installed — it includes the APK and handles
 Whatever the server routes on, it has to recognise the SIM's number: the
 gateway puts that number in the Request-URI, so a dialplan or number table
 keyed on it is what decides where the call goes.
+
+## Snoop and Call monitor
+
+**Snoop** (the headphones button during a call) plays the call on this phone's
+speaker — the caller and the agent — for listening in.  The microphone stays
+muted the whole time, so nothing in the room reaches either side, and nothing
+played on the speaker is sent into the call: only the agent's own audio goes up
+the modem uplink.  While it is on the button reads **Off**; tapping it only
+silences the speaker, the call carries on.
+
+**Call monitor** (Settings, at the bottom) starts Snoop on every call
+automatically.  The phone badge in the header shows the setting — red on, grey
+off — and is also its switch; flipping it during a call takes that call on or
+off the speaker as well.
 
 ## Quick start with callagent.pro
 
