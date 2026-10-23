@@ -70,8 +70,6 @@ class RtpSession(
     //
     // The microphone stays muted throughout — this only ever plays audio out.
     @Volatile private var monitorTrack: AudioTrack? = null
-    /** The user's alarm volume while the monitor has raised it; null otherwise. */
-    @Volatile private var savedAlarmVolume: Int? = null
     /** Most recent caller frame, 16-bit mono at [captureRate], for mixing. */
     @Volatile private var lastCallerFrame: ByteArray? = null
 
@@ -1497,10 +1495,17 @@ class RtpSession(
                             // vibrate or silent mode mutes STREAM_SYSTEM, so the
                             // monitor played into a muted stream — "Monitor ON"
                             // in the log and nothing on the speaker (Poco, MIUI
-                            // 14, 2026-10-23).  STREAM_ALARM is never muted by
-                            // the ringer mode and is not the stream injected
-                            // into the uplink.
-                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            // 14, 2026-10-23).
+                            //
+                            // Nor USAGE_ALARM, tried next: during a call the
+                            // audio policy mutes alarm/sonification streams on
+                            // the speaker, so on MIUI the monitor was silent and
+                            // only the call's own downlink leaked out — the
+                            // caller and no agent.  VOICE_COMMUNICATION is the
+                            // stream that plays on the speaker in a call; only
+                            // STREAM_MUSIC goes to the uplink.  GsmCallManager
+                            // unmutes it while snooping (setMonitoring).
+                            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                             .build()
                     )
@@ -1521,22 +1526,11 @@ class RtpSession(
                         ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
                         ?.let { t.setPreferredDevice(it) }
                 } catch (_: Exception) {}
-                // The alarm volume is the user's, and on the test phone it sat
-                // at 1 of 7 on the speaker — inaudible.  Raise it to ~70% for
-                // as long as the monitor is on and put it back afterwards.
                 try {
-                    val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                    if (am != null) {
-                        val max = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-                        val cur = am.getStreamVolume(AudioManager.STREAM_ALARM)
-                        val want = (max * 7 + 9) / 10
-                        if (cur < want) {
-                            savedAlarmVolume = cur
-                            am.setStreamVolume(AudioManager.STREAM_ALARM, want, 0)
-                        }
-                    }
+                    (context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager)
+                        ?.let { GsmCallManager.setMonitoring(it, true) }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Monitor volume: ${e.message}")
+                    Log.w(TAG, "Monitor audio: ${e.message}")
                 }
                 t.play()
                 monitorTrack = t
@@ -1551,13 +1545,10 @@ class RtpSession(
                 try { it.release() } catch (_: Exception) {}
             }
             monitorTrack = null
-            savedAlarmVolume?.let { v ->
-                try {
-                    (context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager)
-                        ?.setStreamVolume(AudioManager.STREAM_ALARM, v, 0)
-                } catch (_: Exception) {}
-            }
-            savedAlarmVolume = null
+            try {
+                (context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager)
+                    ?.let { GsmCallManager.setMonitoring(it, false) }
+            } catch (_: Exception) {}
             Log.i(TAG, "Monitor OFF")
             listener?.onRtpStats("Monitor OFF")
         }
@@ -1577,7 +1568,11 @@ class RtpSession(
     private fun feedMonitor(agentPcm: ByteArray) {
         val t = monitorTrack ?: return
         try {
-            val caller = lastCallerFrame
+            // Where the call itself plays on the speaker while snooping
+            // (GsmCallManager.monitorCarriesCallAudio), the caller is already
+            // audible — mixing them in again would play them twice, slightly
+            // apart.  Then this track carries the agent alone.
+            val caller = if (GsmCallManager.monitorCarriesCallAudio) null else lastCallerFrame
             if (monitorBuf.size != agentPcm.size) monitorBuf = ByteArray(agentPcm.size)
             val out = monitorBuf
             var i = 0
@@ -1586,7 +1581,7 @@ class RtpSession(
                 val c = if (caller != null && i + 1 < caller.size) {
                     ((caller[i + 1].toInt() shl 8) or (caller[i].toInt() and 0xFF)).toShort().toInt()
                 } else 0
-                val mixed = (((a * 3) + c) / 4).coerceIn(-32768, 32767)
+                val mixed = if (caller == null) a else (((a * 3) + c) / 4).coerceIn(-32768, 32767)
                 out[i] = (mixed and 0xFF).toByte()
                 out[i + 1] = ((mixed shr 8) and 0xFF).toByte()
                 i += 2

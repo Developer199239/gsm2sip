@@ -623,6 +623,20 @@ object GsmCallManager {
         }
     }
 
+    /** True while SNOOP is on — see the first branch of [enforceVolumes]. */
+    @Volatile var monitoring = false
+        private set
+
+    /** Turn SNOOP's speaker path on or off and re-apply the volumes. */
+    fun setMonitoring(am: AudioManager, on: Boolean) {
+        monitoring = on
+        enforceVolumes(am)
+    }
+
+    /** True when the call itself plays on the speaker while snooping, so the
+     *  monitor track must carry only the agent (or the caller is heard twice). */
+    val monitorCarriesCallAudio: Boolean get() = profile.silenceLocalAudio
+
     /** Set audio stream volumes for the GSM↔SIP bridge.
      *  Called multiple times: immediately, after delayed route change,
      *  and from RtpSession as a secondary safeguard. */
@@ -635,6 +649,23 @@ object GsmCallManager {
         try {
             am.adjustStreamVolume(AudioManager.STREAM_VOICE_CALL, AudioManager.ADJUST_UNMUTE, 0)
         } catch (_: SecurityException) {}
+
+        if (profile.silenceLocalAudio && monitoring) {
+            // SNOOP on: the call itself is what plays on the speaker — unmute
+            // and raise the voice stream (the caller), and RtpSession's monitor
+            // track adds the agent on the same stream.  The microphone stays
+            // muted, so the room is never sent to either side.  Re-applied by
+            // every enforceVolumes() call while snooping, so the call-setup
+            // and 3-s safety passes cannot silence it again.
+            try {
+                am.adjustStreamVolume(AudioManager.STREAM_VOICE_CALL, AudioManager.ADJUST_UNMUTE, 0)
+                val max = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+                am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, (max * 7 + 9) / 10, 0)
+            } catch (_: SecurityException) {}
+            try { am.isMicrophoneMute = true } catch (_: Exception) {}
+            appLog("Snoop: call audio on the speaker, mic muted")
+            return
+        }
 
         if (profile.silenceLocalAudio) {
             // Digital bridge: silence the handset itself.  Done through
