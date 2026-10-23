@@ -65,7 +65,13 @@ object SmsSender {
         val base = context.getSystemService(SmsManager::class.java)
             ?: @Suppress("DEPRECATION") SmsManager.getDefault()
         return if (subId >= 0 && subId != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
-            runCatching { base.createForSubscriptionId(subId) }.getOrDefault(base)
+            // createForSubscriptionId is API 31; the static it replaced works
+            // back to API 22.  Without this a dual-SIM phone below Android 12
+            // sent every SMS from the default SIM.
+            runCatching {
+                if (android.os.Build.VERSION.SDK_INT >= 31) base.createForSubscriptionId(subId)
+                else @Suppress("DEPRECATION") SmsManager.getSmsManagerForSubscriptionId(subId)
+            }.getOrDefault(base)
         } else {
             base
         }

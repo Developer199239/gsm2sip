@@ -400,13 +400,47 @@ object GsmCallManager {
         }
     }
 
+    /**
+     * The subscription a telephony PhoneAccount belongs to, or
+     * INVALID_SUBSCRIPTION_ID.
+     *
+     * TelephonyManager.getSubscriptionId(PhoneAccountHandle) only exists from
+     * Android 11.  Below that the call throws NoSuchMethodError, an Error that
+     * `catch (e: Exception)` lets through, and the gateway crashed on every
+     * incoming call on the S4 Mini (Android 9).  There the account id is the
+     * SIM's ICCID (PstnPhoneAccountHandle), so match it against the active
+     * subscriptions; some builds use the subId itself as the id.
+     */
+    @SuppressLint("MissingPermission", "NewApi")
+    fun subscriptionIdOf(context: Context, account: PhoneAccountHandle): Int {
+        val invalid = SubscriptionManager.INVALID_SUBSCRIPTION_ID
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                context.getSystemService(TelephonyManager::class.java).getSubscriptionId(account)
+            } else {
+                val subs = context.getSystemService(SubscriptionManager::class.java)
+                    ?.activeSubscriptionInfoList.orEmpty()
+                val id = account.id.orEmpty().trimEnd('F', 'f')
+                subs.firstOrNull { sub ->
+                    val icc = sub.iccId.orEmpty().trimEnd('F', 'f')
+                    icc.isNotEmpty() && id.isNotEmpty() && (icc.startsWith(id) || id.startsWith(icc))
+                }?.subscriptionId
+                    ?: id.toIntOrNull()?.takeIf { n -> subs.any { it.subscriptionId == n } }
+                    ?: subs.singleOrNull()?.subscriptionId
+                    ?: invalid
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Could not resolve subscription for phone account: ${e.message}")
+            invalid
+        }
+    }
+
     /** The call-capable accounts that belong to an active SIM. */
     @SuppressLint("MissingPermission")
     private fun simPhoneAccounts(context: Context, telecom: TelecomManager): List<PhoneAccountHandle> {
-        val tm = context.getSystemService(TelephonyManager::class.java)
         return try {
             telecom.callCapablePhoneAccounts.filter {
-                tm.getSubscriptionId(it) != SubscriptionManager.INVALID_SUBSCRIPTION_ID
+                subscriptionIdOf(context, it) != SubscriptionManager.INVALID_SUBSCRIPTION_ID
             }
         } catch (e: Exception) {
             Log.w(TAG, "Could not enumerate SIM phone accounts: ${e.message}")
@@ -435,7 +469,6 @@ object GsmCallManager {
             return null
         }
 
-        val tm = context.getSystemService(TelephonyManager::class.java)
         val sm = context.getSystemService(SubscriptionManager::class.java)
         // The legacy own_number value was assigned to the lowest active slot
         // when the per-SIM fields were introduced.  Do not apply it to every
@@ -450,12 +483,7 @@ object GsmCallManager {
         }
         val matches = mutableListOf<PhoneAccountHandle>()
         for (account in accounts) {
-            val subId = try {
-                tm.getSubscriptionId(account)
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not resolve subscription for phone account: ${e.message}")
-                SubscriptionManager.INVALID_SUBSCRIPTION_ID
-            }
+            val subId = subscriptionIdOf(context, account)
             if (subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) continue
 
             val slot = try {

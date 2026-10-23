@@ -293,8 +293,7 @@ class CallOrchestrator(
         val prefs = context.getSharedPreferences("gateway", Context.MODE_PRIVATE)
         val subscription = gsmCall?.details?.accountHandle?.let { account ->
             try {
-                val tm = context.getSystemService(TelephonyManager::class.java)
-                val subId = tm.getSubscriptionId(account)
+                val subId = com.callagent.gateway.gsm.GsmCallManager.subscriptionIdOf(context, account)
                 if (subId != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
                     val info = context.getSystemService(SubscriptionManager::class.java)
                         ?.getActiveSubscriptionInfo(subId)

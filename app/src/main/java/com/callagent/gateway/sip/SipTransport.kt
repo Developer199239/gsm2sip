@@ -75,8 +75,13 @@ class UdpSipTransport(
         val f = Os.socket(OsConstants.AF_INET, OsConstants.SOCK_DGRAM, OsConstants.IPPROTO_UDP)
         try {
             Os.setsockoptInt(f, OsConstants.SOL_SOCKET, OsConstants.SO_REUSEADDR, 1)
-            Os.setsockoptTimeval(f, OsConstants.SOL_SOCKET, OsConstants.SO_RCVTIMEO,
-                StructTimeval.fromMillis(soTimeoutMs.toLong()))
+            // setsockoptTimeval is API 29; below it the timeout is a poll()
+            // in receive() instead, or opening a UDP transport crashed with
+            // NoSuchMethodError on Android 9.
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                Os.setsockoptTimeval(f, OsConstants.SOL_SOCKET, OsConstants.SO_RCVTIMEO,
+                    StructTimeval.fromMillis(soTimeoutMs.toLong()))
+            }
             network?.bindSocket(f)
             Os.bind(f, InetAddress.getByName("0.0.0.0"), localPort)
             fd = f
@@ -100,6 +105,12 @@ class UdpSipTransport(
     override fun receive(): Pair<String, Pair<String, Int>>? {
         val f = fd ?: return null
         return try {
+            if (android.os.Build.VERSION.SDK_INT < 29) {
+                val pfd = android.system.StructPollfd().apply {
+                    fd = f; events = OsConstants.POLLIN.toShort()
+                }
+                if (Os.poll(arrayOf(pfd), soTimeoutMs) <= 0) return null
+            }
             val source = InetSocketAddress(0)
             val length = Os.recvfrom(f, buf, 0, buf.size, 0, source)
             val data = String(buf, 0, length, Charsets.UTF_8)
