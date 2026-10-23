@@ -401,13 +401,41 @@ data class DeviceProfile(
             return cmd.replace("tinymix", bin)
         }
 
+        /** A system property, or "" — android.os.SystemProperties is hidden API. */
+        private fun sysProp(key: String): String = try {
+            Class.forName("android.os.SystemProperties")
+                .getMethod("get", String::class.java)
+                .invoke(null, key) as? String ?: ""
+        } catch (_: Throwable) { "" }
+
+        /** A small sysfs file, or "" if it cannot be read. */
+        private fun readSys(path: String): String = try {
+            java.io.File(path).readText().trim()
+        } catch (_: Throwable) { "" }
+
         /** Auto-detect the device and return the appropriate profile. */
         fun detect(): DeviceProfile {
             val hw = Build.HARDWARE.lowercase()
             val board = Build.BOARD.lowercase()
             val model = Build.MODEL.lowercase()
             val device = Build.DEVICE.lowercase()
-            Log.i(TAG, "Detecting device: hw=$hw board=$board model=${Build.MODEL} device=${Build.DEVICE}")
+            // The chip itself, whatever the ROM calls the phone.  Build.BOARD
+            // is not it: LineageOS puts the platform there ("sm6150"), MIUI
+            // the codename ("surya"), and a codename list never covers every
+            // Xiaomi/Poco/Redmi model.  All four of these are readable without
+            // root on MIUI 14 — /proc/device-tree and /proc/asound are not.
+            val platform = sysProp("ro.board.platform").lowercase()
+            val socModel = (if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL else sysProp("ro.soc.model")).lowercase()
+            val socMachine = readSys("/sys/devices/soc0/machine").lowercase()
+            val socId = readSys("/sys/devices/soc0/soc_id")
+            Log.i(TAG, "Detecting device: hw=$hw board=$board model=${Build.MODEL} device=${Build.DEVICE} " +
+                "platform=$platform soc=$socModel machine=$socMachine socId=$socId")
+            val sm6150Family =
+                listOf(board, hw, platform, socModel).any { it.contains("sm6150") || it.contains("sm7150") } ||
+                // Qualcomm's own names: talos = SM6150, sdmmagpie = SM7150,
+                // sdmmagpiep = SM7150-AC/P (Poco X3 NFC reports "SDMMAGPIE").
+                socMachine in setOf("talos", "sdmmagpie", "sdmmagpiep", "magpie") ||
+                socId in setOf("355", "365", "366")
 
             return when {
                 // Samsung Galaxy S4 Mini (MSM8930 / WCD9304)
@@ -433,9 +461,8 @@ data class DeviceProfile(
                 // audio played on the loudspeaker instead of into the call and
                 // the caller was never captured.  Match the codenames too —
                 // surya (X3 NFC) and karna (X3, same SoC and codec).
-                board.contains("sm6150") || board.contains("sm7150") ||
+                sm6150Family ||
                     device == "surya" || device == "karna" ||
-                    board == "surya" || board == "karna" ||
                     device == "sunfish" || board == "sunfish" || hw == "sunfish" ->
                     sm6150()
 
