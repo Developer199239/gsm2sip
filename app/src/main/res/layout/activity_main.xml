@@ -354,13 +354,6 @@
                             android:textStyle="bold"
                             android:textColor="@color/text_secondary" />
 
-                        <TextView
-                            android:id="@+id/tvHomeTrafficDay"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Today"
-                            android:textSize="12sp"
-                            android:textColor="@color/text_secondary" />
                     </LinearLayout>
 
                     <LinearLayout
