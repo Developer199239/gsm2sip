@@ -563,6 +563,8 @@ class MainActivity : AppCompatActivity() {
             prefs.getBoolean("use_stun", true)
         findViewById<CheckBox>(R.id.cbCfgTranslit).isChecked =
             prefs.getBoolean("translit_ascii", false)
+        findViewById<CheckBox>(R.id.cbCfgCallMonitor).isChecked =
+            prefs.getBoolean("call_monitor", false)
         val cbTls = findViewById<CheckBox>(R.id.cbCfgTls)
         val cbSrtp = findViewById<CheckBox>(R.id.cbCfgSrtp)
         cbTls.isChecked = prefs.getBoolean("sip_tls", false)
@@ -669,6 +671,7 @@ class MainActivity : AppCompatActivity() {
         val auto = findViewById<CheckBox>(R.id.cbCfgAutoconnect).isChecked
         val useStun = findViewById<CheckBox>(R.id.cbCfgUseStun).isChecked
         val translit = findViewById<CheckBox>(R.id.cbCfgTranslit).isChecked
+        val callMonitor = findViewById<CheckBox>(R.id.cbCfgCallMonitor).isChecked
         val tls = findViewById<CheckBox>(R.id.cbCfgTls).isChecked
         // Stored as asked for, but only ever acted on with TLS — so turning
         // TLS off and on again does not silently lose the audio setting.
@@ -698,6 +701,7 @@ class MainActivity : AppCompatActivity() {
             .putBoolean("autoconnect", auto)
             .putBoolean("use_stun", useStun)
             .putBoolean("translit_ascii", translit)
+            .putBoolean("call_monitor", callMonitor)
             .putBoolean("sip_tls", tls)
             .putBoolean("srtp_enabled", srtp)
             .putString("codec", codec)
@@ -709,6 +713,7 @@ class MainActivity : AppCompatActivity() {
                 "tls=${if (tls) "on" else "off"}, " +
                 "srtp=${if (srtp && tls) "on" else "off"}, " +
                 "ascii=${if (translit) "on" else "off"}, " +
+                "monitor=${if (callMonitor) "on" else "off"}, " +
                     "agent volume ${if (agentVolStep > 0) "+$agentVolStep" else "$agentVolStep"})"
         )
         Toast.makeText(this, "Saved — reconnecting", Toast.LENGTH_SHORT).show()
@@ -1828,7 +1833,14 @@ class MainActivity : AppCompatActivity() {
     private fun updateStatus(state: String, info: String) {
         // SNOOP only does anything while audio is flowing, so it follows the
         // bridge state rather than being permanently tappable.
+        val wasLive = callLive
         callLive = state == "BRIDGED"
+        // Call monitor: the service has already switched Snoop on for this
+        // call (CallOrchestrator), so the button has to say Off from the start.
+        if (callLive && !wasLive &&
+            getSharedPreferences("gateway", MODE_PRIVATE).getBoolean("call_monitor", false)) {
+            monitoring = true
+        }
         updateMonitorButtons()
         updateHomeCall(state, info)
 

@@ -419,10 +419,12 @@ class GatewayService : Service() {
             ACTION_MONITOR -> {
                 // No extra means "toggle", which is what the notification
                 // action sends; the in-call screen passes an explicit value.
+                // Toggle from the call's real state, not a copy kept here:
+                // Call monitor switches Snoop on without going through this.
                 monitorOn = if (intent.hasExtra(EXTRA_MONITOR_ON)) {
                     intent.getBooleanExtra(EXTRA_MONITOR_ON, false)
                 } else {
-                    !monitorOn
+                    !(orchestrator?.isMonitoring ?: monitorOn)
                 }
                 orchestrator?.setMonitorEnabled(monitorOn)
                 updateNotification(NotifState.OK)

@@ -697,6 +697,23 @@
                             android:textColor="@color/text_hint"
                             android:paddingTop="6dp" />
 
+                        <CheckBox
+                            android:id="@+id/cbCfgCallMonitor"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Call monitor"
+                            android:buttonTint="@color/accent"
+                            android:textColor="@color/text_label"
+                            android:layout_marginTop="8dp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Puts every call on Snoop automatically: caller and agent both play on this phone's speaker. The microphone stays muted. Snoop can still be switched off during a call."
+                            android:textSize="12sp"
+                            android:textColor="@color/text_hint"
+                            android:paddingTop="6dp" />
+
                         <Button
                             android:id="@+id/btnCfgClearRecents"
                             android:layout_width="wrap_content"

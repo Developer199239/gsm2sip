@@ -1471,6 +1471,9 @@ class RtpSession(
         return if (sample < 0) -shaped else shaped
     }
 
+    /** True while the speaker monitor (Snoop) is playing. */
+    val isMonitoring: Boolean get() = monitorTrack != null
+
     /** Turn the speaker monitor on or off mid-call.  Safe to call repeatedly. */
     fun setMonitorEnabled(on: Boolean) {
         if (on) {
