@@ -14,20 +14,20 @@ import java.nio.ByteBuffer
 object StunClient {
     private const val TAG = "StunClient"
 
-    // STUN servers — telecom-friendly servers first (port 3478)
+    // STUN servers, tried in order.  Only ones that answered when checked on
+    // 2026-10-23: a dead entry costs its full timeout at every gateway start
+    // and network change (stun.counterpath.com alone added 3 s), and a name
+    // that no longer resolves can stall in DNS for far longer than that
+    // (stun.rixtelecom.se took 12 s).  Dropped then: counterpath, mozilla,
+    // jappix, ekiga, ideasip, iptel, rixtelecom, stunserver.org.
     private val STUN_SERVERS = listOf(
-        "stun.counterpath.com" to 3478,
-        "stun.services.mozilla.com" to 3478,
         "stun.sipgate.net" to 3478,
-        "stun.jappix.com" to 3478,
         "stun.1und1.de" to 3478,
-        "stun.gmx.net" to 3478,
-        "stun.ekiga.net" to 3478,
-        "stun.ideasip.com" to 3478,
-        "stun.iptel.org" to 3478,
-        "stun.rixtelecom.se" to 3478,
         "stun.schlund.de" to 3478,
-        "stunserver.org" to 3478
+        "stun.gmx.net" to 3478,
+        "stun.cloudflare.com" to 3478,
+        "stun.nextcloud.com" to 3478,
+        "stun.l.google.com" to 19302
     )
 
     private const val STUN_BINDING_REQUEST: Short = 0x0001
@@ -72,7 +72,7 @@ object StunClient {
         val oldTimeout = sock.soTimeout
         try {
             network?.bindSocket(sock)
-            sock.soTimeout = 3000
+            sock.soTimeout = 1500   // a live server answers in well under 100 ms
 
             // Build STUN Binding Request (20 bytes header, no attributes)
             val txId = ByteArray(12)
