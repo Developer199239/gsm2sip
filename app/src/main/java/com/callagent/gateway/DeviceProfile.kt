@@ -44,6 +44,22 @@ data class DeviceProfile(
      *  Voice Rx/Tx Device Mute are re-applied by the HAL when it programs the
      *  voice-call mixer path and had no lasting effect. */
     val silenceLocalAudio: Boolean = false,
+    /** Start capture before the incall_music playback track is created.
+     *  Pixel 4a needs this order (the modem TX path otherwise waits on a
+     *  voice path not yet opened -> random one-way calls).  The S4 Mini
+     *  needs the opposite: capture and incall_music share its MultiMedia1
+     *  front-end, and opening capture first left the caller silent
+     *  (rawCapRMS 6-7 on every source, 2026-10-23) where 1.2.0, which
+     *  opened playback first, captured the caller cleanly. */
+    val primeCaptureBeforePlayback: Boolean = true,
+    /** Give up on a capture source that has not yet carried sound once it
+     *  has been silent for SILENCE_FRAME_LIMIT frames.  Off where the
+     *  source is known: on the S4 Mini the caller's line is digital silence
+     *  until they first speak, so a caller who listened to the agent's
+     *  greeting got VOICE_RECOGNITION retired after ~5 s and the call fell
+     *  through to VOICE_CALL@16k and MIC, which carry nothing there — the
+     *  agent never heard them (2026-10-23, three calls). */
+    val silenceFallback: Boolean = true,
 
     /** Consecutive silent frames before a capture source is abandoned.
      *
@@ -631,6 +647,8 @@ data class DeviceProfile(
             requireSpeakerMode = true,
             incallMusicParam = "incall_music_enabled",
             voiceDownlinkWorks = false,
+            primeCaptureBeforePlayback = false,
+            silenceFallback = false,
             routeChangeDelayMs = 700,
             appopsPropagationMs = 500,
         )

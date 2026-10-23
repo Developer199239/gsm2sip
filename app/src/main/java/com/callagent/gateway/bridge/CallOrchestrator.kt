@@ -168,7 +168,18 @@ class CallOrchestrator(
         if (audioReady) {
             pendingIncoming = null
             Log.i(TAG, "Audio HAL ready — starting SIP flow for waiting GSM call from $number")
-            Thread({ handleInboundFlow(call) }, "SIP-OutCall").start()
+            Thread({
+            // Anything thrown here used to kill the whole process, taking the
+            // registration down with the one call (S4 Mini, 2026-10-23: a
+            // RejectedExecutionException from a SIP client whose executor
+            // had been shut down).  Fail the call, keep the gateway.
+            try {
+                handleInboundFlow(call)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Inbound flow failed: $t", t)
+                tearDown("inbound flow failed: ${t.javaClass.simpleName}")
+            }
+        }, "SIP-OutCall").start()
             return
         }
 
@@ -619,7 +630,18 @@ class CallOrchestrator(
         // hears the agent immediately with no dead air.
         // The caller hears normal ringing in the meantime.
         Log.i(TAG, "GSM ringing from $number — placing SIP call first")
-        Thread({ handleInboundFlow(call) }, "SIP-OutCall").start()
+        Thread({
+            // Anything thrown here used to kill the whole process, taking the
+            // registration down with the one call (S4 Mini, 2026-10-23: a
+            // RejectedExecutionException from a SIP client whose executor
+            // had been shut down).  Fail the call, keep the gateway.
+            try {
+                handleInboundFlow(call)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Inbound flow failed: $t", t)
+                tearDown("inbound flow failed: ${t.javaClass.simpleName}")
+            }
+        }, "SIP-OutCall").start()
     }
 
     /** GSM call is now active (answered) */
@@ -667,7 +689,18 @@ class CallOrchestrator(
                     diallerInitiated = false
                     bridgeState = BridgeState.GSM_ANSWERED
                     listener?.onStateChanged(bridgeState, "GSM answered, calling Asterisk")
-                    Thread({ handleInboundFlow(call) }, "SIP-OutCall").start()
+                    Thread({
+            // Anything thrown here used to kill the whole process, taking the
+            // registration down with the one call (S4 Mini, 2026-10-23: a
+            // RejectedExecutionException from a SIP client whose executor
+            // had been shut down).  Fail the call, keep the gateway.
+            try {
+                handleInboundFlow(call)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Inbound flow failed: $t", t)
+                tearDown("inbound flow failed: ${t.javaClass.simpleName}")
+            }
+        }, "SIP-OutCall").start()
                 } else {
                     // SIP-initiated OUTBOUND flow: GSM destination answered → start audio bridge
                     bridgeState = BridgeState.BRIDGED

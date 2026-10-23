@@ -457,7 +457,7 @@ class RtpSession(
             // incall_music track first can leave the modem TX output waiting
             // on a voice path that has not been opened yet, producing random
             // SIP->GSM one-way calls after the first call.
-            try {
+            if (profile.primeCaptureBeforePlayback) try {
                 record.startRecording()
                 Log.i(TAG, "AudioRecord primed before AudioTrack: state=${record.recordingState}")
             } catch (e: Exception) {
@@ -1043,7 +1043,7 @@ class RtpSession(
                             Log.w(TAG, "Source $audioSourceName low audio (no-echo): rawCapRMS=$rawCaptureRms silence=${silenceFrameCount}/${SILENCE_FRAME_LIMIT} frames")
                         }
                         if (silenceFrameCount >= SILENCE_FRAME_LIMIT) {
-                            if (sourceProven) {
+                            if (sourceProven || !profile.silenceFallback) {
                                 // Dead air, not a dead source.  Tearing the
                                 // AudioRecord down here and blacklisting the
                                 // source was catastrophic mid-call: with
