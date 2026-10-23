@@ -144,8 +144,7 @@ That is why the gateway moved to a Qualcomm device.
   calls no longer sounds like a radio at the edge of range.
 - RTP header extensions and padding are skipped instead of decoded as audio.
 - The Magisk module seeds its root policy on Android 15 too.
-- Google Pixel 4a: recognised by `tools/check-device.sh`, plus an optional
-  battery-protection setting that keeps the charge between two limits.
+- Google Pixel 4a: recognised by `tools/check-device.sh`.
 
 > **Dual-SIM gateways — outbound caller ID.** With two SIMs, an outbound call
 > has to carry the number of the SIM it should leave by as its caller ID; one
