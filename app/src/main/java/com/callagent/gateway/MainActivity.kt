@@ -336,6 +336,8 @@ class MainActivity : AppCompatActivity() {
         tvHomeTlsBadge = findViewById(R.id.tvHomeTlsBadge)
         tvHomeSrtpBadge = findViewById(R.id.tvHomeSrtpBadge)
         tvHomeMonitorBadge = findViewById(R.id.tvHomeMonitorBadge)
+        tvHomeMonitorBadge.setOnClickListener { toggleCallMonitor() }
+        refreshMonitorBadge()
         tvNetMobile = findViewById(R.id.tvNetMobile)
         tvNetWifi = findViewById(R.id.tvNetWifi)
         homeCallCard = findViewById(R.id.homeCallCard)
@@ -781,10 +783,7 @@ class MainActivity : AppCompatActivity() {
         tvHomeSrtpBadge.visibility =
             if (tlsOn && cfg.getBoolean("srtp_enabled", false)) View.VISIBLE else View.GONE
 
-        // Settings → Call monitor: a red phone-volume badge while every call
-        // is put on the speaker, so it is never on without anyone noticing.
-        tvHomeMonitorBadge.visibility =
-            if (cfg.getBoolean("call_monitor", false)) View.VISIBLE else View.GONE
+        refreshMonitorBadge()
 
         if (state == "BRIDGED") {
             homeCallCard.visibility = View.VISIBLE
@@ -1746,6 +1745,37 @@ class MainActivity : AppCompatActivity() {
         })
         updateMonitorButtons()
         appendLog(if (monitoring) "Snoop on — both sides on the speaker" else "Snoop off")
+    }
+
+    /**
+     * The Call monitor badge is always in the header and is the setting's
+     * switch: red while every call is put on the speaker, grey while not —
+     * the same value as Settings → Call monitor.
+     */
+    private fun refreshMonitorBadge() {
+        if (!::tvHomeMonitorBadge.isInitialized) return
+        val on = getSharedPreferences("gateway", MODE_PRIVATE).getBoolean("call_monitor", false)
+        val tint = ContextCompat.getColor(this, if (on) R.color.monitor_badge else R.color.text_secondary)
+        androidx.core.widget.TextViewCompat.setCompoundDrawableTintList(
+            tvHomeMonitorBadge, ColorStateList.valueOf(tint)
+        )
+        tvHomeMonitorBadge.contentDescription =
+            if (on) "Call monitor on: every call plays on the speaker. Tap to turn off."
+            else "Call monitor off. Tap to put every call on the speaker."
+    }
+
+    /** Badge tap: flip Call monitor, and take the call in progress with it. */
+    private fun toggleCallMonitor() {
+        val prefs = getSharedPreferences("gateway", MODE_PRIVATE)
+        val on = !prefs.getBoolean("call_monitor", false)
+        prefs.edit().putBoolean("call_monitor", on).apply()
+        // Here, not in refreshMonitorBadge: that runs on every status update
+        // and would undo an unsaved tick in the settings screen.
+        findViewById<CheckBox>(R.id.cbCfgCallMonitor)?.isChecked = on
+        refreshMonitorBadge()
+        if (callLive && monitoring != on) toggleMonitor()
+        appendLog(if (on) "Call monitor on — every call on the speaker" else "Call monitor off")
+        Toast.makeText(this, if (on) "Call monitor on" else "Call monitor off", Toast.LENGTH_SHORT).show()
     }
 
     private fun updateMonitorButtons() {
