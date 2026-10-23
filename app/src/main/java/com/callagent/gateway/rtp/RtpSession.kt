@@ -70,6 +70,8 @@ class RtpSession(
     //
     // The microphone stays muted throughout — this only ever plays audio out.
     @Volatile private var monitorTrack: AudioTrack? = null
+    /** The user's alarm volume while the monitor has raised it; null otherwise. */
+    @Volatile private var savedAlarmVolume: Int? = null
     /** Most recent caller frame, 16-bit mono at [captureRate], for mixing. */
     @Volatile private var lastCallerFrame: ByteArray? = null
 
@@ -1454,6 +1456,23 @@ class RtpSession(
         listener?.onRtpStats(if (on) "Agent muted" else "Agent unmuted")
     }
 
+    /** Knee of [softLimit]: about 75% of full scale. */
+    private val limitKnee = 24576
+
+    /**
+     * Map a boosted sample into 16 bits without a hard edge.  Linear up to
+     * [limitKnee]; past it the remainder is compressed with x/(1+x) so the
+     * output approaches 32767 but never jumps to it.
+     */
+    private fun softLimit(sample: Int): Int {
+        val a = kotlin.math.abs(sample)
+        if (a <= limitKnee) return sample
+        val room = 32767 - limitKnee
+        val over = (a - limitKnee).toDouble() / room
+        val shaped = limitKnee + (room * over / (1.0 + over)).toInt()
+        return if (sample < 0) -shaped else shaped
+    }
+
     /** Turn the speaker monitor on or off mid-call.  Safe to call repeatedly. */
     fun setMonitorEnabled(on: Boolean) {
         if (on) {
@@ -1472,7 +1491,16 @@ class RtpSession(
                             // so a monitor track on USAGE_MEDIA would be sent
                             // to the caller instead of the speaker, which is
                             // the opposite of what monitoring is for.
-                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                            //
+                            // And not USAGE_ASSISTANCE_SONIFICATION, which it
+                            // was: that is STREAM_SYSTEM, and on MIUI a phone in
+                            // vibrate or silent mode mutes STREAM_SYSTEM, so the
+                            // monitor played into a muted stream — "Monitor ON"
+                            // in the log and nothing on the speaker (Poco, MIUI
+                            // 14, 2026-10-23).  STREAM_ALARM is never muted by
+                            // the ringer mode and is not the stream injected
+                            // into the uplink.
+                            .setUsage(AudioAttributes.USAGE_ALARM)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                             .build()
                     )
@@ -1493,6 +1521,23 @@ class RtpSession(
                         ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
                         ?.let { t.setPreferredDevice(it) }
                 } catch (_: Exception) {}
+                // The alarm volume is the user's, and on the test phone it sat
+                // at 1 of 7 on the speaker — inaudible.  Raise it to ~70% for
+                // as long as the monitor is on and put it back afterwards.
+                try {
+                    val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                    if (am != null) {
+                        val max = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+                        val cur = am.getStreamVolume(AudioManager.STREAM_ALARM)
+                        val want = (max * 7 + 9) / 10
+                        if (cur < want) {
+                            savedAlarmVolume = cur
+                            am.setStreamVolume(AudioManager.STREAM_ALARM, want, 0)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Monitor volume: ${e.message}")
+                }
                 t.play()
                 monitorTrack = t
                 Log.i(TAG, "Monitor ON — both sides on the speaker, mic stays muted")
@@ -1506,6 +1551,13 @@ class RtpSession(
                 try { it.release() } catch (_: Exception) {}
             }
             monitorTrack = null
+            savedAlarmVolume?.let { v ->
+                try {
+                    (context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager)
+                        ?.setStreamVolume(AudioManager.STREAM_ALARM, v, 0)
+                } catch (_: Exception) {}
+            }
+            savedAlarmVolume = null
             Log.i(TAG, "Monitor OFF")
             listener?.onRtpStats("Monitor OFF")
         }
@@ -1648,7 +1700,13 @@ class RtpSession(
                         val lo = pcm[i * 2].toInt() and 0xFF
                         val hi = pcm[i * 2 + 1].toInt()
                         val sample = ((((hi shl 8) or lo) * gain).toInt())
-                        val clamped = sample.coerceIn(-32768, 32767)
+                        // Soft-limit, not a hard clamp: a boosted peak used to
+                        // be cut flat at full scale, heard as crackle on every
+                        // loud syllable (playRMS 25198 on a live call, MIUI,
+                        // 2026-10-23 — gain x4).  Below the knee nothing
+                        // changes; above it the excess is compressed smoothly
+                        // towards full scale.
+                        val clamped = softLimit(sample)
                         pcm[i * 2] = (clamped and 0xFF).toByte()
                         pcm[i * 2 + 1] = ((clamped shr 8) and 0xFF).toByte()
                     }

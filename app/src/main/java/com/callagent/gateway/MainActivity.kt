@@ -1367,8 +1367,6 @@ class MainActivity : AppCompatActivity() {
         homeTrafficList.removeAllViews()
         tvHomeTrafficEmpty.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
 
-        val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
-            .format(java.util.Date())
         val hhmm = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
 
         for (e in entries.take(30)) {
@@ -1403,16 +1401,29 @@ class MainActivity : AppCompatActivity() {
                     dur.setTextColor(Color.parseColor("#F87171"))
                 }
             }
-            val d = java.util.Date(e.timestamp)
-            val sameDay = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(d) == today
-            row.findViewById<TextView>(R.id.tvRowTime).text =
-                if (sameDay) hhmm.format(d) else "Earlier"
+            row.findViewById<TextView>(R.id.tvRowTime).text = rowTimeLabel(e.timestamp)
             if (sms) {
                 row.isClickable = true
                 row.isFocusable = true
                 row.setOnClickListener { showSmsDetails(e) }
             }
             homeTrafficList.addView(row)
+        }
+    }
+
+    /**
+     * When a call or SMS happened, as a row label.  Anything not from today
+     * used to say just "Earlier", so a call from yesterday and one from last
+     * month looked the same.  Today: the time; any earlier day: the full date
+     * and time without the year, e.g. "12 Oct 12:32:22".
+     */
+    private fun rowTimeLabel(timestamp: Long): String {
+        val then = java.util.Date(timestamp)
+        val day = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+        return if (day.format(then) == day.format(java.util.Date())) {
+            java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(then)
+        } else {
+            java.text.SimpleDateFormat("d MMM HH:mm:ss", java.util.Locale.ENGLISH).format(then)
         }
     }
 
