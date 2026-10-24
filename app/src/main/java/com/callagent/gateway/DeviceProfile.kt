@@ -1001,14 +1001,21 @@ data class DeviceProfile(
             // rawCapRMS 1000-5200 against 26-190 on the acoustic path — so it
             // needs no gain at all.  At 4x it clipped (capRMS ~20000 of 32767).
             captureGain = 1,
-            playbackGain = 2,
+            // Unity: the agent leaves on an INCALL_MUSIC output at 0 dB, so
+            // x2 was pure boost -- peaks at -0.5 dBFS, into the limiter, heard
+            // as distortion (Poco, 2026-10-24).  Passed through untouched.
+            playbackGain = 1,
             // 40-55 was measured against a loud recorded announcement; a real
             // caller coming through the speaker only reaches rawCapRMS 19-26,
             // and a gate of 30 discarded nearly all of it (noise=561 vs
             // fwd=481, capRMS=0) so the agent heard nothing at all.  Sits just
             // under the speech floor instead; voiceCallVolPercent below is what
             // buys back the headroom over room noise.
-            noiseGateThreshold = 12,
+            //
+            // On the digital VOICE_DOWNLINK capture the line between words is
+            // digital silence (Poco, 2026-10-24), so a gate only chops word
+            // tails: off, like the S4 Mini.
+            noiseGateThreshold = 0,
             echoGateThreshold = 300,
             doubleTalkRatio = 1.5f,
             requireSpeakerMode = true,
@@ -1051,6 +1058,7 @@ data class DeviceProfile(
             // consecutive calls.
             playbackLowLatency = false,
             playbackBufferMs = 100,
+            playbackFadeIn = false,
             routeChangeDelayMs = 500,
             audioRouteSettleDelayMs = 500,
             audioStopSettleDelayMs = 18_000,

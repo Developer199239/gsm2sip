@@ -11,8 +11,8 @@ android {
         applicationId = "com.callagent.gateway"
         minSdk = 26
         targetSdk = 34
-        versionCode = 454
-        versionName = "1.4.13"
+        versionCode = 455
+        versionName = "1.4.14"
     }
 
     // A release build is signed with the same debug key the debug build uses.
