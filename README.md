@@ -133,6 +133,33 @@ That is why the gateway moved to a Qualcomm device.
 - **Power**: Always connected to charger
 - **Build host**: Linux with JDK 17+
 
+## What's new in 1.4.14
+
+- **Call audio is passed through untouched** on the Galaxy S4 Mini and the
+  SM6150/SM7150 phones (Poco X3 NFC): no gain, no noise gate, no fade-in in
+  either direction. The call is digital end to end on these phones, so any
+  processing only did harm:
+  - The S4 Mini played the agent at 14% media volume (−47 dB), because the same
+    stream also drove its loudspeaker. The loudspeaker path is now cut during
+    calls and the agent goes out at full level.
+  - The noise gate chopped the ends of words and split sentences into separate
+    turns, so the agent kept saying it did not understand.
+  - On the Poco a ×2 boost pushed the agent into the limiter (distortion).
+- **The S4 Mini keeps the right capture source.** A frame-rate check no longer
+  swaps it mid-call for one that feeds the agent its own voice back.
+- **Android 9 fixes:**
+  - Incoming calls no longer crash below Android 11.
+  - UDP SIP works below Android 10.
+  - SMS go out on the right SIM below Android 12.
+- **Stays online:**
+  - A failed TLS reconnect no longer wedges SIP until restart.
+  - With the screen off and Wi-Fi gone, the gateway briefly wakes the screen
+    so the phone rescans; the S4 Mini never rescans on its own.
+- **Faster start:** STUN only tries servers that answer, 1.5 s each.
+- **Diagnostics:** an opt-in raw PCM dump of both call directions. Create the
+  file `files/dump_audio` in the app's data directory; each call then writes
+  `files/dump/cap.raw` and `play.raw`.
+
 ## What's new in 1.4.1
 
 - **The header fits small screens.** The Online/Offline pill is now a globe

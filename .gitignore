@@ -15,4 +15,5 @@ app/build/
 # IDE
 .idea/
 *.iml
-.vscode/
+config.bat
+node_modules
