@@ -60,6 +60,10 @@ data class DeviceProfile(
      *  through to VOICE_CALL@16k and MIC, which carry nothing there — the
      *  agent never heard them (2026-10-23, three calls). */
     val silenceFallback: Boolean = true,
+    /** 5 ms fade-in on the agent's audio after a silent stretch.  Off where
+     *  the call is digital end to end and the owner wants it passed through
+     *  untouched (S4 Mini, 2026-10-24). */
+    val playbackFadeIn: Boolean = true,
 
     /** Consecutive silent frames before a capture source is abandoned.
      *
@@ -527,6 +531,14 @@ data class DeviceProfile(
                 append("tinymix 'Voice Tx Device Mute' 1 2>/dev/null; ")
                 // Disable echo reference
                 append("tinymix 291 0 2>/dev/null; ")
+                // The agent's stream also feeds PRI_RX, the I2S output to the
+                // PMIC speaker amp.  The WCD controls below (RX3, SPK DRV) are
+                // a different speaker path and never silenced this one, which
+                // is why STREAM_MUSIC had to be held at 14% (-47 dB) and the
+                // agent reached the caller barely audible.  Cut it here; the
+                // call gets the stream through Incall_Music only.
+                append("tinymix 'PRI_RX Audio Mixer MultiMedia1' 0 2>/dev/null; ")
+                append("tinymix 'PRI_RX Audio Mixer MultiMedia2' 0 2>/dev/null; ")
                 // Enable incall_music mixer
                 append("tinymix 'Incall_Music Audio Mixer MultiMedia1' 1 2>/dev/null; ")
                 append("tinymix 'Incall_Music Audio Mixer MultiMedia2' 1 2>/dev/null; ")
@@ -571,22 +583,31 @@ data class DeviceProfile(
                 append("tinymix 'Speaker Boost Volume' 5 2>/dev/null; ")
                 append("tinymix 'LINEOUT1 Volume' 100 2>/dev/null; ")
                 append("tinymix 'LINEOUT2 Volume' 100 2>/dev/null; ")
+                // Media back on the speaker
+                append("tinymix 'PRI_RX Audio Mixer MultiMedia1' 1 2>/dev/null; ")
                 // Restore echo reference
                 append("tinymix 291 1 2>/dev/null")
             },
             mixerIncallMusicCmd = buildString {
+                // Again here: the HAL re-routes MultiMedia1 to PRI_RX whenever
+                // it reopens the output.
+                append("tinymix 'PRI_RX Audio Mixer MultiMedia1' 0 2>/dev/null; ")
+                append("tinymix 'PRI_RX Audio Mixer MultiMedia2' 0 2>/dev/null; ")
                 append("tinymix 'Incall_Music Audio Mixer MultiMedia1' 1 2>/dev/null; ")
                 append("tinymix 'Incall_Music Audio Mixer MultiMedia2' 1 2>/dev/null; ")
                 append("tinymix 'Voice Tx Mute' 0 2>/dev/null; ")
                 append("sleep 1; ")
                 append("tinymix 'Incall_Music Audio Mixer MultiMedia1' 1 2>/dev/null; ")
-                append("tinymix 'Incall_Music Audio Mixer MultiMedia2' 1 2>/dev/null")
+                append("tinymix 'Incall_Music Audio Mixer MultiMedia2' 1 2>/dev/null; ")
+                append("tinymix 'PRI_RX Audio Mixer MultiMedia1' 0 2>/dev/null; ")
+                append("tinymix 'PRI_RX Audio Mixer MultiMedia2' 0 2>/dev/null")
             },
             mixerVerifyCmd = buildString {
                 append("echo -n 'VoiceRxDevMute='; tinymix 'Voice Rx Device Mute' 2>&1; ")
                 append("echo -n 'VoiceTxMute='; tinymix 'Voice Tx Mute' 2>&1; ")
                 append("echo -n 'IncallMM1='; tinymix 'Incall_Music Audio Mixer MultiMedia1' 2>&1; ")
-                append("echo -n 'IncallMM2='; tinymix 'Incall_Music Audio Mixer MultiMedia2' 2>&1")
+                append("echo -n 'IncallMM2='; tinymix 'Incall_Music Audio Mixer MultiMedia2' 2>&1; ")
+                append("echo -n 'PriRxMM1='; tinymix 'PRI_RX Audio Mixer MultiMedia1' 2>&1")
             },
             // UNVERIFIED — the S4 Mini was not available to test against.
             // voice_extn is generic Qualcomm code, so the in-call recording
@@ -602,21 +623,32 @@ data class DeviceProfile(
             // and made no audible difference at the far end — the incall_music
             // path does not take its level from the STREAM_MUSIC index — so
             // loudness has to come from playbackGain or the agent itself.
-            musicVolPercent = 14,
-            // Capture is relayed unaltered — the modem's level is already
-            // healthy and sm6150 does the same.  Playback keeps a x2: the far
-            // end reported the agent as quiet without it, and the STREAM_MUSIC
-            // index turned out not to drive the incall_music level at all, so
-            // this is the only lever left short of raising the agent itself.
+            // Full scale since PRI_RX is cut (above).  At 14% the mixer output
+            // took -47 dB off the agent, measured mid-call 2026-10-23 -- the
+            // September note that the index "made no audible difference" was
+            // wrong; it was also what kept the speaker leak quiet.
+            musicVolPercent = 100,
+            // Unity both ways: the call is digital end to end here (modem DSP
+            // in, incall_music out), so the gateway passes it through
+            // untouched.  What made the agent mishear was the gate below
+            // chopping words, not the level.
             captureGain = 1,
-            playbackGain = 2,
+            playbackGain = 1,   // x2 only made up for the -47 dB above
             // Measured on live calls: the modem's silence floor sits at
             // rawCapRMS 6-174, while speech runs 471-4132.  At 500 the gate was
             // biting into speech — a frame at 471 was zeroed outright — and the
             // hard on/off at the threshold was audible as chatter at the starts
             // and ends of words.  100 keeps the gate almost entirely out of the
             // way, at the cost of relaying some of the modem's own hiss.
-            noiseGateThreshold = 100,
+            //
+            // On VOICE_RECOGNITION (VOC_REC_DL) the floor is far lower: the
+            // line is digital silence, rawCapRMS 6-10.  At 100 the gate cut
+            // the soft ends of words (-50..-60 dBFS), so the agent got clipped
+            // fragments.  Even at 30 the hard cut to zero between words split
+            // one sentence into several turns at the agent ("Я говорю как-то..."
+            // / "Viva", 2026-10-24).  The line is already silent between words,
+            // so there is nothing for a gate to remove: off.
+            noiseGateThreshold = 0,
             echoGateThreshold = 300,
             doubleTalkRatio = 1.5f,
             // Nothing to cancel: capture is AudioSource.VOICE_CALL straight off
@@ -649,6 +681,7 @@ data class DeviceProfile(
             voiceDownlinkWorks = false,
             primeCaptureBeforePlayback = false,
             silenceFallback = false,
+            playbackFadeIn = false,
             routeChangeDelayMs = 700,
             appopsPropagationMs = 500,
         )

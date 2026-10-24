@@ -817,6 +817,8 @@ class RtpSession(
             return
         }
         Log.i(TAG, "Stopping RTP session on port $localPort")
+        try { capDump?.close() } catch (_: Exception) {}
+        try { playDump?.close() } catch (_: Exception) {}
 
         setMonitorEnabled(false)
 
@@ -930,6 +932,17 @@ class RtpSession(
     // Threshold is device-specific (modem DSP noise floor varies).
     private val noiseGateThreshold get() = profile.noiseGateThreshold
 
+    // Raw PCM dump for diagnosing audio by ear or by analysis.  Opt-in:
+    // only when files/dump_audio exists.  Overwritten every call.
+    private val dumpDir = java.io.File(context.filesDir, "dump")
+    private val dumpOn = java.io.File(context.filesDir, "dump_audio").exists()
+    private val capDump: java.io.OutputStream? = if (dumpOn) try {
+        dumpDir.mkdirs(); java.io.BufferedOutputStream(java.io.FileOutputStream(java.io.File(dumpDir, "cap.raw")))
+    } catch (_: Exception) { null } else null
+    private val playDump: java.io.OutputStream? = if (dumpOn) try {
+        java.io.BufferedOutputStream(java.io.FileOutputStream(java.io.File(dumpDir, "play.raw")))
+    } catch (_: Exception) { null } else null
+
     // Diagnostic counters: track how frames are classified for stats logging
     @Volatile private var echoGatedFrames = 0L
     @Volatile private var noiseGatedFrames = 0L
@@ -1001,6 +1014,11 @@ class RtpSession(
                 // to stall does so from the start.  A proven source is still
                 // eligible -- "proven" only means it produced sound, which is
                 // exactly the state this failure hides behind.
+                // Not where the profile has ruled fallback out: on the S4 Mini
+                // VOICE_RECOGNITION ran at 83% on a live call (2026-10-24) and
+                // was swapped for VOICE_CALL, which hands the agent its own
+                // voice back.  A slightly slow right source beats a wrong one.
+                if (!rateChecked && !profile.silenceFallback) rateChecked = true
                 if (!rateChecked) {
                     val elapsed = System.currentTimeMillis() - captureStartMs
                     if (elapsed >= RATE_CHECK_AFTER_MS) {
@@ -1026,6 +1044,7 @@ class RtpSession(
                 // (HAL/modem not providing audio).  If rawCaptureRms>0 but
                 // captureRms=0, the echo gate is suppressing.
                 rawCaptureRms = pcmRms(pcmBuf)
+                capDump?.let { try { it.write(pcmBuf, 0, read) } catch (_: Exception) {} }
                 if (monitorTrack != null) lastCallerFrame = pcmBuf.copyOf()
 
                 // Silence detection: only count during non-echo periods (when
@@ -1678,7 +1697,7 @@ class RtpSession(
                 // causes distorted/harsh beginning of each agent phrase.
                 // 5ms ramp (40 samples @ 8kHz) is enough to smooth the onset.
                 if (wasPlayingSilence) {
-                    applyFadeIn(pcm)
+                    if (profile.playbackFadeIn) applyFadeIn(pcm)
                     wasPlayingSilence = false
                 }
 
@@ -1718,6 +1737,7 @@ class RtpSession(
                 }
                 playbackRms = if (playbackGain > 1) pcmRms(pcm) else rawRms
                 feedMonitor(pcm)
+                playDump?.let { try { it.write(pcm) } catch (_: Exception) {} }
                 val out = if (playbackChannels == 2) monoToStereo(pcm) else pcm
                 writePlaybackFrame(track, out)
                 playbackFrames++
